@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profiles Profile[]
+  payments Payment[] // ✅ REQUIRED opposite relation
+  apiKeys   ApiKey[]
+
+}
+
+model Profile {
+  id     String @id @default(cuid())
+  userId String
+
+  label String @default("Default")
+
+  fullName String?
+  email    String?
+  phone    String?
+  address  String?
+  city     String?
+  state    String?
+  country  String?
+
+  linkedin String?
+  github   String?
+  website  String?
+
+  yearsExp     String?
+  currentCtc   String?
+  expectedCtc  String?
+  noticePeriod String?
+
+  summary String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Payment {
+  id     String @id @default(cuid())
+  userId String
+
+  provider  String // "razorpay"
+  orderId   String
+  paymentId String?
+  signature String?
+
+  amount   Int
+  currency String @default("INR")
+  status   String // "created" | "paid" | "failed"
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([orderId])
+}
+model ApiKey {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  label     String   @default("Extension")
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

@@ -2,13 +2,25 @@
 
 import { useEffect, useState } from "react";
 
+function loadRazorpay() {
+  return new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true);
+
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
+
 export default function ApiKeyPage() {
   const [backendUrl, setBackendUrl] = useState("http://localhost:8080");
   const [apiKey, setApiKey] = useState("");
   const [status, setStatus] = useState({ type: "idle", msg: "" });
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [lastRotated, setLastRotated] = useState(""); // display string
+  const [lastRotated, setLastRotated] = useState("");
 
   useEffect(() => {
     try {
@@ -19,7 +31,7 @@ export default function ApiKeyPage() {
 
   function setRotatedNow() {
     const now = new Date();
-    const display = now.toLocaleString(); // uses user locale/timezone
+    const display = now.toLocaleString();
     setLastRotated(display);
     try {
       localStorage.setItem("autoform_last_rotated", display);
@@ -53,9 +65,7 @@ export default function ApiKeyPage() {
       const key =
         data?.apiKey || data?.key || data?.token || data?.data?.apiKey || data?.data?.key || "";
 
-      if (!key) {
-        throw new Error("API key not found in response. Check backend response shape.");
-      }
+      if (!key) throw new Error("API key not found in response. Check backend response shape.");
 
       setApiKey(key);
       setRotatedNow();
@@ -66,9 +76,7 @@ export default function ApiKeyPage() {
     } catch (e) {
       setStatus({
         type: "error",
-        msg:
-          e?.message ||
-          "Failed to rotate API key. Check backend URL, server logs, and CORS settings.",
+        msg: e?.message || "Failed to rotate API key. Check backend URL and server logs.",
       });
       setApiKey("");
     } finally {
@@ -85,13 +93,88 @@ export default function ApiKeyPage() {
     } catch {}
   }
 
+  async function payAndActivate() {
+    if (!apiKey) {
+      alert("Generate API key first");
+      return;
+    }
+
+    if (!backendUrl || !backendUrl.startsWith("http")) {
+      alert("Enter a valid backend URL first");
+      return;
+    }
+
+    const ok = await loadRazorpay();
+    if (!ok) {
+      alert("Razorpay SDK failed to load");
+      return;
+    }
+
+    const base = backendUrl.replace(/\/$/, "");
+
+    // 1) Create order
+    let data;
+    try {
+      const res = await fetch(`${base}/api/billing/create-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey }),
+      });
+      data = await res.json();
+    } catch (e) {
+      alert("Failed to reach backend. Is backend running?");
+      return;
+    }
+
+    if (!data?.ok) {
+      alert(data?.error || "Failed to create order");
+      return;
+    }
+
+    // 2) Open Razorpay
+    const options = {
+      key: data.keyId,
+      amount: data.amount,
+      currency: data.currency,
+      name: "AutoForm Filler",
+      description: "30-day API key activation",
+      order_id: data.orderId,
+      handler: async function (response) {
+        // 3) Verify payment
+        try {
+          const vr = await fetch(`${base}/api/billing/verify`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              apiKey,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            }),
+          });
+
+          const vd = await vr.json();
+          if (vd?.ok) {
+            alert("Payment successful. API key activated.");
+          } else {
+            alert(vd?.error || "Payment verification failed");
+          }
+        } catch {
+          alert("Payment done but verification call failed. Check backend logs.");
+        }
+      },
+      theme: { color: "#1a73e8" },
+    };
+
+    const rzp = new window.Razorpay(options);
+    rzp.open();
+  }
+
   return (
     <main style={styles.page}>
       <div style={styles.card}>
         <div style={styles.topRow}>
-          <a href="/" style={styles.backLink}>
-            ← Home
-          </a>
+          <a href="/" style={styles.backLink}>← Home</a>
           <span style={styles.logo}>AutoForm</span>
         </div>
 
@@ -148,6 +231,15 @@ export default function ApiKeyPage() {
             </button>
           </div>
 
+          {/* ✅ Payment button */}
+          <button
+            onClick={payAndActivate}
+            disabled={!apiKey}
+            style={{ ...styles.payButton, ...(!apiKey ? styles.disabledBtn : {}) }}
+          >
+            Pay ₹199 & Activate (30 days)
+          </button>
+
           <div style={styles.steps}>
             <div style={styles.stepTitle}>Next</div>
             <ol style={styles.ol}>
@@ -188,39 +280,12 @@ const styles = {
     justifyContent: "space-between",
     marginBottom: 10,
   },
-  backLink: {
-    color: "#555",
-    textDecoration: "none",
-    fontSize: 13,
-  },
-  logo: {
-    fontSize: 16,
-    fontWeight: 700,
-    color: "#1a73e8",
-    letterSpacing: 0.3,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: 750,
-    margin: "10px 0 6px",
-    color: "#111",
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#555",
-    lineHeight: 1.6,
-    marginBottom: 18,
-  },
-  fieldBlock: {
-    marginBottom: 14,
-  },
-  label: {
-    display: "block",
-    fontSize: 12,
-    fontWeight: 650,
-    color: "#333",
-    marginBottom: 6,
-  },
+  backLink: { color: "#555", textDecoration: "none", fontSize: 13 },
+  logo: { fontSize: 16, fontWeight: 700, color: "#1a73e8", letterSpacing: 0.3 },
+  title: { fontSize: 22, fontWeight: 750, margin: "10px 0 6px", color: "#111" },
+  subtitle: { fontSize: 14, color: "#555", lineHeight: 1.6, marginBottom: 18 },
+  fieldBlock: { marginBottom: 14 },
+  label: { display: "block", fontSize: 12, fontWeight: 650, color: "#333", marginBottom: 6 },
   input: {
     width: "100%",
     padding: "11px 12px",
@@ -229,12 +294,7 @@ const styles = {
     outline: "none",
     fontSize: 14,
   },
-  hint: {
-    marginTop: 8,
-    fontSize: 12,
-    color: "#6b7280",
-    lineHeight: 1.5,
-  },
+  hint: { marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.5 },
   primaryButton: {
     width: "100%",
     padding: "12px 14px",
@@ -246,28 +306,22 @@ const styles = {
     fontWeight: 650,
     cursor: "pointer",
   },
-  lastRotated: {
-    marginTop: 10,
-    fontSize: 12,
-    color: "#6b7280",
-  },
-  alert: {
+  payButton: {
+    width: "100%",
     marginTop: 12,
-    padding: "10px 12px",
+    padding: "12px 14px",
+    background: "#111827",
+    color: "#fff",
+    border: "none",
     borderRadius: 10,
-    fontSize: 13,
-    lineHeight: 1.45,
+    fontSize: 14,
+    fontWeight: 750,
+    cursor: "pointer",
   },
-  alertError: {
-    background: "#fff5f5",
-    border: "1px solid #ffd0d0",
-    color: "#a30000",
-  },
-  alertSuccess: {
-    background: "#f1fbf4",
-    border: "1px solid #bfe9c9",
-    color: "#116329",
-  },
+  lastRotated: { marginTop: 10, fontSize: 12, color: "#6b7280" },
+  alert: { marginTop: 12, padding: "10px 12px", borderRadius: 10, fontSize: 13, lineHeight: 1.45 },
+  alertError: { background: "#fff5f5", border: "1px solid #ffd0d0", color: "#a30000" },
+  alertSuccess: { background: "#f1fbf4", border: "1px solid #bfe9c9", color: "#116329" },
   keyBox: {
     display: "flex",
     gap: 10,
@@ -295,10 +349,7 @@ const styles = {
     fontWeight: 650,
     cursor: "pointer",
   },
-  disabledBtn: {
-    opacity: 0.55,
-    cursor: "not-allowed",
-  },
+  disabledBtn: { opacity: 0.55, cursor: "not-allowed" },
   steps: {
     marginTop: 14,
     padding: 12,
@@ -314,17 +365,6 @@ const styles = {
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
-  ol: {
-    margin: 0,
-    paddingLeft: 18,
-    color: "#444",
-    fontSize: 13,
-    lineHeight: 1.6,
-  },
-  footerNote: {
-    marginTop: 14,
-    fontSize: 12,
-    color: "#777",
-    textAlign: "center",
-  },
+  ol: { margin: 0, paddingLeft: 18, color: "#444", fontSize: 13, lineHeight: 1.6 },
+  footerNote: { marginTop: 14, fontSize: 12, color: "#777", textAlign: "center" },
 };

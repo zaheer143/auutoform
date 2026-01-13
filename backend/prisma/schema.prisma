@@ -73,14 +73,22 @@ model Payment {
   @@index([orderId])
 }
 model ApiKey {
-  id        String   @id @default(cuid())
-  userId    String
-  tokenHash String   @unique
-  label     String   @default("Extension")
-  createdAt DateTime @default(now())
-  revokedAt DateTime?
+  id            String    @id @default(cuid())
+  userId        String
+  tokenHash     String    @unique
+  label         String    @default("Extension")
+  createdAt     DateTime  @default(now())
+  revokedAt     DateTime?
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // 🔐 Billing / activation
+  isActive      Boolean   @default(false)
+  activeUntil   DateTime?
+  plan          String?   // e.g. "monthly"
+  lastPaymentId String?
+  lastOrderId   String?
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
+

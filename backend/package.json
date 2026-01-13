@@ -4,23 +4,23 @@
     "type": "module",
     "private": true,
     "scripts": {
-      "dev": "node --watch src/server.js",
-      "start": "node src/server.js",
-      "prisma:gen": "prisma generate",
-      "prisma:migrate": "prisma migrate dev --name init"
+        "dev": "node --watch src/server.js",
+        "start": "node src/server.js",
+        "prisma:gen": "prisma generate",
+        "prisma:migrate": "prisma migrate dev --name init"
     },
     "dependencies": {
-      "@prisma/client": "^6.0.0",
-      "cors": "^2.8.5",
-      "dotenv": "^16.4.5",
-      "express": "^4.19.2",
-      "express-rate-limit": "^7.4.0",
-      "helmet": "^7.1.0",
-      "morgan": "^1.10.0",
-      "zod": "^3.23.8"
+        "@prisma/client": "^6.0.0",
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.5",
+        "express": "^4.19.2",
+        "express-rate-limit": "^7.4.0",
+        "helmet": "^7.1.0",
+        "morgan": "^1.10.0",
+        "razorpay": "^2.9.6",
+        "zod": "^3.23.8"
     },
     "devDependencies": {
-      "prisma": "^6.0.0"
+        "prisma": "^6.0.0"
     }
-  }
-  
+}

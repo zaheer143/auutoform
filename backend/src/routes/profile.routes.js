@@ -4,7 +4,7 @@ import { db } from "../db/db.js";
 export const profileRouter = express.Router();
 
 /**
- * Resolve api_key_id from x-api-key header
+ * Auth: validate x-api-key exists and is active.
  */
 async function requireApiKey(req, res, next) {
   try {
@@ -21,7 +21,7 @@ async function requireApiKey(req, res, next) {
 
     if (!r.rows.length) return res.status(401).json({ error: "Invalid API key" });
 
-    req.api_key_id = r.rows[0].id;
+    req.apiKey = apiKey;
     return next();
   } catch (e) {
     console.error("API key lookup error:", e);
@@ -31,19 +31,20 @@ async function requireApiKey(req, res, next) {
 
 /**
  * GET /api/profile
- * Returns the profile for the given API key.
+ * Returns the profile row for this API key.
  */
 profileRouter.get("/", requireApiKey, async (req, res) => {
   try {
     const r = await db.query(
       `SELECT *
        FROM profiles
-       WHERE api_key_id = $1
+       WHERE api_key = $1
        LIMIT 1`,
-      [req.api_key_id]
+      [req.apiKey]
     );
 
-    return res.json({ profile: r.rows[0] || null });
+    // Return a flat object so extension can use fields directly
+    return res.json(r.rows[0] || {});
   } catch (e) {
     console.error("GET /api/profile error:", e);
     return res.status(500).json({ error: "Failed to fetch profile" });
@@ -52,12 +53,10 @@ profileRouter.get("/", requireApiKey, async (req, res) => {
 
 /**
  * POST /api/profile
- * Creates or updates the profile for the given API key.
- * (Profile is created ONLY when user saves details — not during /api/key.)
+ * Upsert profile row keyed by api_key.
  */
 profileRouter.post("/", requireApiKey, async (req, res) => {
   try {
-    // Only allow known fields (extend anytime)
     const allowed = [
       "first_name",
       "last_name",
@@ -72,16 +71,12 @@ profileRouter.post("/", requireApiKey, async (req, res) => {
       "expected_ctc",
       "linkedin_url",
       "github_url",
-      "portfolio_url",
-      "education",
-      "work_authorization",
-      "preferred_locations",
-      "relocation"
+      "portfolio_url"
     ];
 
     const body = req.body || {};
     const fields = [];
-    const values = [req.api_key_id]; // $1 reserved for api_key_id
+    const values = [req.apiKey]; // $1 = api_key
 
     for (const key of allowed) {
       if (Object.prototype.hasOwnProperty.call(body, key)) {
@@ -90,30 +85,28 @@ profileRouter.post("/", requireApiKey, async (req, res) => {
       }
     }
 
-    // If user sent nothing, don’t create junk rows
     if (fields.length === 0) {
       return res.status(400).json({ error: "No valid profile fields provided" });
     }
 
-    // Build an upsert:
-    // - inserts api_key_id + provided fields
-    // - on conflict(api_key_id) updates only provided fields
-    const insertCols = ["api_key_id", ...fields];
+    const insertCols = ["api_key", ...fields, "updated_at"];
     const insertParams = insertCols.map((_, i) => `$${i + 1}`);
 
-    const updateSet = fields.map((c) => `${c} = EXCLUDED.${c}`).join(", ");
+    // add updated_at value at end
+    values.push(new Date().toISOString());
+
+    const updateSet = [...fields.map((c) => `${c} = EXCLUDED.${c}`), "updated_at = now()"].join(", ");
 
     const q = `
       INSERT INTO profiles (${insertCols.join(", ")})
       VALUES (${insertParams.join(", ")})
-      ON CONFLICT (api_key_id)
+      ON CONFLICT (api_key)
       DO UPDATE SET ${updateSet}
       RETURNING *;
     `;
 
     const r = await db.query(q, values);
-
-    return res.json({ profile: r.rows[0] });
+    return res.json(r.rows[0]);
   } catch (e) {
     console.error("POST /api/profile error:", e);
     return res.status(500).json({ error: "Failed to save profile" });

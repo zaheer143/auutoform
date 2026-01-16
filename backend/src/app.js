@@ -33,8 +33,12 @@ export function createApp() {
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "x-api-key"],
       credentials: false,
+      optionsSuccessStatus: 204
     })
   );
+
+  // Ensure preflight always succeeds fast
+  app.options("*", cors());
 
   app.use(express.json({ limit: "1mb" }));
   app.use(morgan(env.NODE_ENV === "development" ? "dev" : "combined"));

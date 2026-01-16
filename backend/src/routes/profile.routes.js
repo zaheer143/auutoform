@@ -82,13 +82,11 @@ profileRouter.post("/", requireApiKey, async (req, res) => {
     const body = req.body || {};
     const fields = [];
     const values = [req.api_key_id]; // $1 reserved for api_key_id
-    let idx = 2;
 
     for (const key of allowed) {
       if (Object.prototype.hasOwnProperty.call(body, key)) {
         fields.push(key);
         values.push(body[key]);
-        idx++;
       }
     }
 

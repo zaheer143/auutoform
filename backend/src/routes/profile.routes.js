@@ -29,9 +29,45 @@ async function requireApiKey(req, res, next) {
   }
 }
 
+function pickAllowedFields(body) {
+  const allowed = [
+    "first_name",
+    "last_name",
+    "email",
+    "phone",
+    "city",
+    "current_company",
+    "role_title",
+    "total_experience_years",
+    "notice_period_days",
+    "current_ctc",
+    "expected_ctc",
+    "linkedin_url",
+    "github_url",
+    "portfolio_url",
+    "education",
+    "work_authorization",
+    "preferred_locations",
+    "relocation"
+  ];
+
+  const data = body || {};
+  const fields = [];
+  const values = [];
+
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+      fields.push(key);
+      values.push(data[key]);
+    }
+  }
+
+  return { fields, values };
+}
+
 /**
  * GET /api/profile
- * Returns the profile row for this API key.
+ * Returns profile row for this API key.
  */
 profileRouter.get("/", requireApiKey, async (req, res) => {
   try {
@@ -43,8 +79,7 @@ profileRouter.get("/", requireApiKey, async (req, res) => {
       [req.apiKey]
     );
 
-    // Return a flat object so extension can use fields directly
-    return res.json(r.rows[0] || {});
+    return res.json({ profile: r.rows[0] || null });
   } catch (e) {
     console.error("GET /api/profile error:", e);
     return res.status(500).json({ error: "Failed to fetch profile" });
@@ -52,63 +87,52 @@ profileRouter.get("/", requireApiKey, async (req, res) => {
 });
 
 /**
- * POST /api/profile
- * Upsert profile row keyed by api_key.
+ * UPSERT helper used by POST and PUT
  */
-profileRouter.post("/", requireApiKey, async (req, res) => {
+async function upsertProfile(req, res) {
   try {
-    const allowed = [
-      "first_name",
-      "last_name",
-      "email",
-      "phone",
-      "city",
-      "current_company",
-      "role_title",
-      "total_experience_years",
-      "notice_period_days",
-      "current_ctc",
-      "expected_ctc",
-      "linkedin_url",
-      "github_url",
-      "portfolio_url"
-    ];
-
-    const body = req.body || {};
-    const fields = [];
-    const values = [req.apiKey]; // $1 = api_key
-
-    for (const key of allowed) {
-      if (Object.prototype.hasOwnProperty.call(body, key)) {
-        fields.push(key);
-        values.push(body[key]);
-      }
-    }
+    const { fields, values } = pickAllowedFields(req.body);
 
     if (fields.length === 0) {
       return res.status(400).json({ error: "No valid profile fields provided" });
     }
 
+    // Ensure api_key exists in table for our WHERE/UNIQUE strategy
+    // IMPORTANT: profiles table must have UNIQUE(api_key) for ON CONFLICT to work
     const insertCols = ["api_key", ...fields, "updated_at"];
-    const insertParams = insertCols.map((_, i) => `$${i + 1}`);
+    const params = insertCols.map((_, i) => `$${i + 1}`);
 
-    // add updated_at value at end
-    values.push(new Date().toISOString());
+    const insertValues = [req.apiKey, ...values, new Date().toISOString()];
 
-    const updateSet = [...fields.map((c) => `${c} = EXCLUDED.${c}`), "updated_at = now()"].join(", ");
+    const updateSet = [
+      ...fields.map((c) => `${c} = EXCLUDED.${c}`),
+      "updated_at = now()"
+    ].join(", ");
 
     const q = `
       INSERT INTO profiles (${insertCols.join(", ")})
-      VALUES (${insertParams.join(", ")})
+      VALUES (${params.join(", ")})
       ON CONFLICT (api_key)
       DO UPDATE SET ${updateSet}
       RETURNING *;
     `;
 
-    const r = await db.query(q, values);
-    return res.json(r.rows[0]);
+    const r = await db.query(q, insertValues);
+    return res.json({ profile: r.rows[0] });
   } catch (e) {
-    console.error("POST /api/profile error:", e);
+    console.error("SAVE /api/profile error:", e);
     return res.status(500).json({ error: "Failed to save profile" });
   }
-});
+}
+
+/**
+ * POST /api/profile
+ * Create/update profile.
+ */
+profileRouter.post("/", requireApiKey, upsertProfile);
+
+/**
+ * PUT /api/profile
+ * Create/update profile (frontend currently uses PUT).
+ */
+profileRouter.put("/", requireApiKey, upsertProfile);

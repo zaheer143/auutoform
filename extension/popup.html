@@ -2,131 +2,144 @@
 <html>
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AutoForm Filler</title>
     <style>
-      * { box-sizing: border-box; }
+      :root {
+        --bg1: #0b1220;
+        --bg2: #0f2a4a;
+        --card: rgba(255, 255, 255, 0.08);
+        --border: rgba(255, 255, 255, 0.16);
+        --text: #eaf2ff;
+        --muted: rgba(234, 242, 255, 0.75);
+      }
 
       body {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, Arial;
-        width: 360px;
+        margin: 0;
+        width: 340px;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+        color: var(--text);
+        background: linear-gradient(135deg, var(--bg1), var(--bg2));
+      }
+
+      .wrap {
         padding: 14px;
-        background: #f5f7f9;
+      }
+
+      .title {
+        font-size: 16px;
+        font-weight: 900;
+        margin: 2px 0 10px;
       }
 
       .card {
-        background: #ffffff;
-        border-radius: 12px;
-        padding: 14px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 12px;
       }
 
-      h3 {
-        margin: 0 0 12px 0;
-        font-size: 16px;
-        font-weight: 700;
-        color: #1a73e8;
-      }
-
-      label {
+      .label {
         font-size: 12px;
-        font-weight: 600;
-        color: #333;
-        display: block;
-        margin-top: 10px;
+        font-weight: 800;
+        margin: 10px 0 6px;
+        color: var(--muted);
       }
 
       input {
         width: 100%;
-        padding: 9px 10px;
-        font-size: 13px;
-        margin-top: 6px;
-        border-radius: 8px;
-        border: 1px solid #d7dde3;
+        box-sizing: border-box;
+        padding: 10px 10px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.22);
+        color: var(--text);
         outline: none;
-      }
-
-      input:focus {
-        border-color: #1a73e8;
-      }
-
-      button {
-        width: 100%;
-        padding: 10px;
-        margin-top: 10px;
-        font-size: 13px;
-        font-weight: 600;
-        border-radius: 8px;
-        cursor: pointer;
-      }
-
-      /* Primary action */
-      #fill {
-        background: #1a73e8;
-        color: #fff;
-        border: none;
-      }
-
-      /* Secondary actions */
-      #detect, #save {
-        background: #ffffff;
-        color: #1a73e8;
-        border: 1px solid #d7dde3;
       }
 
       .row {
         display: flex;
-        gap: 8px;
-        margin-top: 8px;
+        gap: 10px;
+        margin-top: 12px;
       }
 
-      .row button {
-        width: 50%;
+      button {
+        flex: 1;
+        padding: 10px 10px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: linear-gradient(135deg, #2f6bff, #00d4ff);
+        color: #07101b;
+        font-weight: 900;
+        cursor: pointer;
       }
 
-      #status {
-        margin-top: 10px;
+      button.secondary {
+        background: rgba(255, 255, 255, 0.10);
+        color: var(--text);
+      }
+
+      .status {
+        margin-top: 12px;
+        padding: 10px;
+        border-radius: 12px;
+        border: 1px dashed rgba(255, 255, 255, 0.24);
+        background: rgba(0, 0, 0, 0.18);
         font-size: 12px;
-        color: #555;
+        color: var(--muted);
         white-space: pre-wrap;
       }
 
-      .link {
-        margin-top: 8px;
+      .hint {
         font-size: 12px;
-        text-align: center;
-      }
-
-      .link a {
-        color: #1a73e8;
-        text-decoration: none;
-        font-weight: 600;
+        color: var(--muted);
+        margin-top: 8px;
+        line-height: 1.35;
       }
     </style>
   </head>
 
   <body>
-    <div class="card">
-      <h3>AutoForm Filler</h3>
+    <div class="wrap">
+      <div class="title">AutoForm Filler</div>
 
-      <label>Backend URL</label>
-      <input id="apiBase" placeholder="http://localhost:8080" />
+      <div class="card">
+        <div class="label">Backend URL</div>
+        <input id="apiBase" placeholder="https://auutoform-production.up.railway.app" />
 
-      <label>API Key</label>
-      <input id="apiKey" placeholder="Paste API key here" />
+        <div class="label">API Key</div>
+        <input id="apiKey" placeholder="paste your API key" />
 
-      <button id="save">Save Settings</button>
+        <div class="row">
+          <button id="save">Save</button>
+          <button id="openProfile" class="secondary">Profile</button>
+        </div>
 
-      <div class="row">
-        <button id="detect">Detect Fields</button>
-        <button id="fill">Fill Now</button>
+        <div class="row">
+          <button id="detect" class="secondary">Detect</button>
+          <button id="fill">Fill</button>
+        </div>
+
+        <div id="status" class="status">Popup loaded.</div>
+
+        <div class="hint">
+          If Fill says profile incomplete, open Profile and save required fields first.
+        </div>
       </div>
-
-      <div class="link">
-        <a href="#" id="openApiKey">Generate / Rotate API Key</a>
-      </div>
-
-      <div id="status">Popup loaded.</div>
     </div>
 
     <script src="popup.js"></script>
+    <script>
+      // Open profile page in a new tab (frontend)
+      document.getElementById("openProfile").addEventListener("click", async () => {
+        const { apiBase } = await chrome.storage.local.get(["apiBase"]);
+        // Profile page is on your frontend, NOT backend.
+        // Change this to your deployed frontend URL when ready.
+        // For now: open a relative placeholder /profile on the same domain as backend won't work,
+        // so we open a generic hint page if not set.
+        const profileUrl = "http://localhost:3000/profile";
+        chrome.tabs.create({ url: profileUrl });
+      });
+    </script>
   </body>
 </html>

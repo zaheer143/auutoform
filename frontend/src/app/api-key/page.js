@@ -14,6 +14,10 @@ function loadRazorpay() {
   });
 }
 
+function baseUrl(url) {
+  return (url || "").trim().replace(/\/$/, "");
+}
+
 export default function ApiKeyPage() {
   const [backendUrl, setBackendUrl] = useState("http://localhost:8080");
   const [apiKey, setApiKey] = useState("");
@@ -27,7 +31,17 @@ export default function ApiKeyPage() {
       const saved = localStorage.getItem("autoform_last_rotated");
       if (saved) setLastRotated(saved);
     } catch {}
+    try {
+      const savedBackend = localStorage.getItem("autoform_backend_url");
+      if (savedBackend) setBackendUrl(savedBackend);
+    } catch {}
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("autoform_backend_url", backendUrl);
+    } catch {}
+  }, [backendUrl]);
 
   function setRotatedNow() {
     const now = new Date();
@@ -38,6 +52,55 @@ export default function ApiKeyPage() {
     } catch {}
   }
 
+  // ✅ Create NEW key (first-time user)
+  async function createKey() {
+    setCopied(false);
+    setStatus({ type: "idle", msg: "" });
+
+    if (!backendUrl || !backendUrl.startsWith("http")) {
+      setStatus({ type: "error", msg: "Enter a valid backend URL (must start with http)." });
+      return;
+    }
+
+    const base = baseUrl(backendUrl);
+
+    try {
+      setLoading(true);
+
+      const res = await fetch(`${base}/api/key`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Request failed with status ${res.status}`);
+      }
+
+      const data = await res.json();
+      const key = data?.apiKey || "";
+
+      if (!key) throw new Error("API key not found in response.");
+
+      setApiKey(key);
+      setRotatedNow();
+      setStatus({
+        type: "success",
+        msg: "API key created. Copy it and paste into the Chrome extension. Also use it on /profile to save your details."
+      });
+    } catch (e) {
+      setStatus({
+        type: "error",
+        msg: e?.message || "Failed to create API key. Check backend URL and server logs."
+      });
+      setApiKey("");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ✅ Rotate key (existing user) — requires current apiKey
   async function rotateKey() {
     setCopied(false);
     setStatus({ type: "idle", msg: "" });
@@ -47,13 +110,26 @@ export default function ApiKeyPage() {
       return;
     }
 
+    const base = baseUrl(backendUrl);
+
+    if (!apiKey || apiKey.trim().length < 10) {
+      setStatus({
+        type: "error",
+        msg: "No current API key found. Click 'Create API Key' first (or paste your existing key), then Rotate."
+      });
+      return;
+    }
+
     try {
       setLoading(true);
 
-      const res = await fetch(`${backendUrl.replace(/\/$/, "")}/api/key/create`, {
+      const res = await fetch(`${base}/api/key/rotate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey.trim()
+        },
+        body: JSON.stringify({})
       });
 
       if (!res.ok) {
@@ -62,23 +138,21 @@ export default function ApiKeyPage() {
       }
 
       const data = await res.json();
-      const key =
-        data?.apiKey || data?.key || data?.token || data?.data?.apiKey || data?.data?.key || "";
+      const newKey = data?.apiKey || "";
 
-      if (!key) throw new Error("API key not found in response. Check backend response shape.");
+      if (!newKey) throw new Error("New API key not found in response.");
 
-      setApiKey(key);
+      setApiKey(newKey);
       setRotatedNow();
       setStatus({
         type: "success",
-        msg: "API key rotated. Paste the new key into the Chrome extension. Old key should stop working.",
+        msg: "API key rotated. Old key is disabled. Copy the new key into the Chrome extension."
       });
     } catch (e) {
       setStatus({
         type: "error",
-        msg: e?.message || "Failed to rotate API key. Check backend URL and server logs.",
+        msg: e?.message || "Failed to rotate API key. Check backend URL and server logs."
       });
-      setApiKey("");
     } finally {
       setLoading(false);
     }
@@ -90,7 +164,9 @@ export default function ApiKeyPage() {
       await navigator.clipboard.writeText(apiKey);
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
-    } catch {}
+    } catch {
+      setStatus({ type: "error", msg: "Copy failed. Please manually select and copy the key." });
+    }
   }
 
   async function payAndActivate() {
@@ -110,7 +186,7 @@ export default function ApiKeyPage() {
       return;
     }
 
-    const base = backendUrl.replace(/\/$/, "");
+    const base = baseUrl(backendUrl);
 
     // 1) Create order
     let data;
@@ -118,7 +194,7 @@ export default function ApiKeyPage() {
       const res = await fetch(`${base}/api/billing/create-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey }),
+        body: JSON.stringify({ apiKey })
       });
       data = await res.json();
     } catch (e) {
@@ -149,8 +225,8 @@ export default function ApiKeyPage() {
               apiKey,
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            }),
+              razorpay_signature: response.razorpay_signature
+            })
           });
 
           const vd = await vr.json();
@@ -163,7 +239,7 @@ export default function ApiKeyPage() {
           alert("Payment done but verification call failed. Check backend logs.");
         }
       },
-      theme: { color: "#1a73e8" },
+      theme: { color: "#1a73e8" }
     };
 
     const rzp = new window.Razorpay(options);
@@ -174,13 +250,15 @@ export default function ApiKeyPage() {
     <main style={styles.page}>
       <div style={styles.card}>
         <div style={styles.topRow}>
-          <a href="/" style={styles.backLink}>← Home</a>
+          <a href="/" style={styles.backLink}>
+            ← Home
+          </a>
           <span style={styles.logo}>AutoForm</span>
         </div>
 
         <h1 style={styles.title}>Connect your extension</h1>
         <p style={styles.subtitle}>
-          Rotate your API key, then paste it into the Chrome extension. Rotating should invalidate your previous key.
+          Create an API key (first time), paste into extension. Rotate later if needed.
         </p>
 
         <div style={styles.fieldBlock}>
@@ -192,15 +270,20 @@ export default function ApiKeyPage() {
             style={styles.input}
           />
           <div style={styles.hint}>
-            Use your Railway backend URL in production. Local example: <code>http://localhost:8080</code>
+            Local example: <code>http://localhost:8080</code> • Production: your Railway backend URL
           </div>
         </div>
 
-        <button onClick={rotateKey} disabled={loading} style={styles.primaryButton}>
-          {loading ? "Rotating..." : "Rotate API Key (old key will stop working)"}
-        </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={createKey} disabled={loading} style={styles.primaryButton}>
+            {loading ? "Working..." : "Create API Key"}
+          </button>
+          <button onClick={rotateKey} disabled={loading} style={styles.secondaryAction}>
+            {loading ? "Working..." : "Rotate API Key"}
+          </button>
+        </div>
 
-        {lastRotated ? <div style={styles.lastRotated}>Last rotated: {lastRotated}</div> : null}
+        {lastRotated ? <div style={styles.lastRotated}>Last action: {lastRotated}</div> : null}
 
         {status.msg ? (
           <div
@@ -210,7 +293,7 @@ export default function ApiKeyPage() {
                 ? styles.alertError
                 : status.type === "success"
                 ? styles.alertSuccess
-                : {}),
+                : {})
             }}
           >
             {status.msg}
@@ -231,7 +314,6 @@ export default function ApiKeyPage() {
             </button>
           </div>
 
-          {/* ✅ Payment button */}
           <button
             onClick={payAndActivate}
             disabled={!apiKey}
@@ -243,9 +325,10 @@ export default function ApiKeyPage() {
           <div style={styles.steps}>
             <div style={styles.stepTitle}>Next</div>
             <ol style={styles.ol}>
-              <li>Open the Chrome extension popup</li>
-              <li>Paste this API key</li>
-              <li>Click “Detect fields” → “Fill now” on a real form</li>
+              <li>Copy API key</li>
+              <li>Paste into Chrome extension → Save</li>
+              <li>Open /profile → Load → fill required → Save</li>
+              <li>Go to a form → Detect → Fill</li>
             </ol>
           </div>
         </div>
@@ -264,7 +347,7 @@ const styles = {
     justifyContent: "center",
     background: "#f5f7f9",
     padding: 16,
-    fontFamily: "Inter, system-ui, Arial",
+    fontFamily: "Inter, system-ui, Arial"
   },
   card: {
     width: "100%",
@@ -272,13 +355,13 @@ const styles = {
     background: "#fff",
     borderRadius: 12,
     padding: "28px 26px",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.08)"
   },
   topRow: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 10
   },
   backLink: { color: "#555", textDecoration: "none", fontSize: 13 },
   logo: { fontSize: 16, fontWeight: 700, color: "#1a73e8", letterSpacing: 0.3 },
@@ -292,11 +375,11 @@ const styles = {
     border: "1px solid #d7dde3",
     borderRadius: 10,
     outline: "none",
-    fontSize: 14,
+    fontSize: 14
   },
   hint: { marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.5 },
   primaryButton: {
-    width: "100%",
+    flex: 1,
     padding: "12px 14px",
     background: "#1a73e8",
     color: "#fff",
@@ -304,7 +387,18 @@ const styles = {
     borderRadius: 10,
     fontSize: 14,
     fontWeight: 650,
-    cursor: "pointer",
+    cursor: "pointer"
+  },
+  secondaryAction: {
+    flex: 1,
+    padding: "12px 14px",
+    background: "#111827",
+    color: "#fff",
+    border: "none",
+    borderRadius: 10,
+    fontSize: 14,
+    fontWeight: 750,
+    cursor: "pointer"
   },
   payButton: {
     width: "100%",
@@ -316,7 +410,7 @@ const styles = {
     borderRadius: 10,
     fontSize: 14,
     fontWeight: 750,
-    cursor: "pointer",
+    cursor: "pointer"
   },
   lastRotated: { marginTop: 10, fontSize: 12, color: "#6b7280" },
   alert: { marginTop: 12, padding: "10px 12px", borderRadius: 10, fontSize: 13, lineHeight: 1.45 },
@@ -329,7 +423,7 @@ const styles = {
     padding: 10,
     border: "1px solid #d7dde3",
     borderRadius: 10,
-    background: "#fafbfc",
+    background: "#fafbfc"
   },
   keyText: {
     flex: 1,
@@ -338,7 +432,7 @@ const styles = {
     fontSize: 12,
     color: "#111",
     wordBreak: "break-all",
-    minHeight: 18,
+    minHeight: 18
   },
   secondaryButton: {
     padding: "9px 12px",
@@ -347,7 +441,7 @@ const styles = {
     background: "#fff",
     fontSize: 13,
     fontWeight: 650,
-    cursor: "pointer",
+    cursor: "pointer"
   },
   disabledBtn: { opacity: 0.55, cursor: "not-allowed" },
   steps: {
@@ -355,7 +449,7 @@ const styles = {
     padding: 12,
     borderRadius: 10,
     border: "1px solid #e6ebf0",
-    background: "#ffffff",
+    background: "#ffffff"
   },
   stepTitle: {
     fontSize: 12,
@@ -363,8 +457,8 @@ const styles = {
     color: "#111",
     marginBottom: 6,
     textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 0.6
   },
   ol: { margin: 0, paddingLeft: 18, color: "#444", fontSize: 13, lineHeight: 1.6 },
-  footerNote: { marginTop: 14, fontSize: 12, color: "#777", textAlign: "center" },
+  footerNote: { marginTop: 14, fontSize: 12, color: "#777", textAlign: "center" }
 };

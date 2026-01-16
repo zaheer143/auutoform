@@ -1,16 +1,27 @@
 {
     "manifest_version": 3,
     "name": "AutoForm Filler",
-    "version": "0.1.0",
-    "description": "Auto-fill forms using your saved profile.",
-    "permissions": ["activeTab", "storage", "scripting"],
-    "host_permissions": ["<all_urls>", "file:///*"],
+    "version": "1.0.0",
+    "description": "Auto-fill job/application forms using your saved profile.",
+  
     "action": {
+      "default_title": "AutoForm Filler",
       "default_popup": "popup.html"
     },
+  
+    "permissions": [
+      "storage",
+      "activeTab",
+      "tabs"
+    ],
+  
+    "host_permissions": [
+      "<all_urls>"
+    ],
+  
     "content_scripts": [
       {
-        "matches": ["<all_urls>", "file:///*"],
+        "matches": ["<all_urls>"],
         "js": ["content.js"],
         "run_at": "document_idle"
       }
